@@ -38,11 +38,83 @@ function saveSeen() {
 
 // ------------------- Keywords -------------------
 const KEYWORDS = [
-  "remote", "intern", "internship", "summer",
-  "full stack", "backend", "frontend",
-  "react", "node", "mern",
-  "generative ai", "ai", "ml", "machine learning"
+  // Internship variations
+  "intern",
+  "internship",
+  "summer intern",
+  "summer internship",
+  "software engineering intern",
+  "ai intern",
+  "ml intern",
+  "full stack intern",
+  "backend intern",
+  "frontend intern",
+
+  // Remote variations
+  "remote",
+  "work from home",
+  "wfh",
+  "hybrid",
+  "flexible",
+
+  // Software engineering roles
+  "software engineer",
+  "sde",
+  "sde intern",
+  "junior developer",
+  "entry level developer",
+  "graduate developer",
+
+  // Full stack variations
+  "full stack",
+  "fullstack",
+  "full-stack",
+  "mern",
+  "mern stack",
+  "react node",
+  "reactjs",
+  "nextjs",
+  "expressjs",
+
+  // Backend variations
+  "backend",
+  "back end",
+  "server side",
+  "nodejs",
+  "node developer",
+  "api developer",
+
+  // Frontend variations
+  "frontend",
+  "front end",
+  "ui developer",
+  "react developer",
+  "javascript developer",
+
+  // AI / ML / Data
+  "ai",
+  "ml",
+  "machine learning",
+  "deep learning",
+  "data science",
+  "data scientist",
+  "generative ai",
+  "genai",
+  "nlp",
+  "computer vision",
+  "llm",
+  "gpt",
+  "openai",
+
+  // Cloud / DevOps (common in job descriptions)
+  "cloud",
+  "aws",
+  "azure",
+  "gcp",
+  "docker",
+  "kubernetes"
 ];
+
 
 // ------------------- Telegram Sender -------------------
 async function sendTelegram(message) {
