@@ -1,4 +1,3 @@
-// server.js
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -6,13 +5,13 @@ const express = require("express");
 const axios = require("axios");
 const cron = require("node-cron");
 
-console.log("🔌 Job Alert Bot initializing...");
+console.log("🔌 Simple Job Search Bot Starting...");
 
-// ------------------- Validate env -------------------
+// Validate ENV
 const REQUIRED = ["BOT_TOKEN", "CHAT_ID", "RAPIDAPI_KEY"];
 for (const v of REQUIRED) {
   if (!process.env[v]) {
-    console.error(`❌ Missing env var: ${v}. Please set it in .env and restart.`);
+    console.error("Missing env:", v);
     process.exit(1);
   }
 }
@@ -20,168 +19,129 @@ for (const v of REQUIRED) {
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const PORT = parseInt(process.env.PORT || "3000", 10);
+const PORT = process.env.PORT || 3000;
 
-// ------------------- Persistence for seen jobs -------------------
+// ------------------- Seen Jobs -------------------
 const SEEN_FILE = path.join(__dirname, "seen.json");
-let seenJobs = new Set();
+let seen = new Set();
 
-function loadSeen() {
-  try {
-    if (fs.existsSync(SEEN_FILE)) {
-      const raw = fs.readFileSync(SEEN_FILE, "utf8");
-      const arr = JSON.parse(raw || "[]");
-      seenJobs = new Set(arr);
-      console.log(`📦 Loaded ${seenJobs.size} seen job(s)`);
-    } else {
-      seenJobs = new Set();
-    }
-  } catch {
-    seenJobs = new Set();
+try {
+  if (fs.existsSync(SEEN_FILE)) {
+    seen = new Set(JSON.parse(fs.readFileSync(SEEN_FILE)));
   }
-}
+} catch {}
 
+// Save seen IDs
 function saveSeen() {
-  try {
-    fs.writeFileSync(SEEN_FILE, JSON.stringify([...seenJobs], null, 2), "utf8");
-  } catch (err) {
-    console.error("❌ Failed to save seen jobs:", err);
-  }
+  fs.writeFileSync(SEEN_FILE, JSON.stringify([...seen], null, 2));
 }
-
-loadSeen();
 
 // ------------------- Keywords -------------------
 const KEYWORDS = [
-  "remote", "work from home", "wfh",
-  "intern", "internship", "summer",
-  "full stack", "full-stack", "backend", "frontend",
+  "remote", "intern", "internship", "summer",
+  "full stack", "backend", "frontend",
   "react", "node", "mern",
-  "generative ai", "gen ai", "ai", "openai", "gpt",
-  "machine learning", "ml engineer"
-].map(k => k.toLowerCase());
+  "generative ai", "ai", "ml", "machine learning"
+];
 
 // ------------------- Telegram Sender -------------------
-async function sendTelegramMessage(text) {
-  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+async function sendTelegram(message) {
   try {
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     await axios.post(url, {
       chat_id: CHAT_ID,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: false
+      text: message,
+      parse_mode: "HTML"
     });
-    console.log("✉️ Telegram notification sent.");
-  } catch (err) {
-    console.error("❌ Telegram error:", err.response?.data || err.message);
+    console.log("✉️ Sent to Telegram");
+  } catch (e) {
+    console.log("❌ Telegram Error", e.message);
   }
 }
 
-// ------------------- Fetch Jobs (RapidAPI JSearch) -------------------
+// ------------------- Fetch Jobs (RapidAPI) -------------------
 async function fetchJobs() {
-  const url = "https://jsearch.p.rapidapi.com/search";
-
-  const params = {
-    query:
-      "remote internship software engineer full stack backend frontend generative ai",
-    num_pages: 1
-  };
-
   try {
-    const { data } = await axios.get(url, {
-      params,
+    const res = await axios.get("https://jsearch.p.rapidapi.com/search", {
+      params: {
+        query: "remote internship full stack backend frontend generative ai",
+        num_pages: 1
+      },
       headers: {
         "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host": "jsearch.p.rapidapi.com"
-      },
-      timeout: 15000
+        "x-rapidapi-host": "jsearch.p.rapidapi.com",
+      }
     });
 
-    if (!data.data) return [];
-
-    return data.data.map(job => ({
-      id: job.job_id,
-      title: job.job_title || "",
-      company: job.employer_name || "",
-      link: job.job_apply_link || job.job_google_link,
-      location: job.job_country || "",
-      description: job.job_description || ""
-    }));
-  } catch (err) {
-    console.error("❌ RapidAPI error:", err.response?.data || err.message);
+    return res.data.data || [];
+  } catch (e) {
+    console.log("❌ Job API Error:", e.message);
     return [];
   }
 }
 
-// ------------------- Matching logic -------------------
-function matchesKeywords(job) {
-  const text = `${job.title} ${job.company} ${job.location} ${job.description}`.toLowerCase();
-  return KEYWORDS.some(k => text.includes(k));
+// ------------------- Keyword Match -------------------
+function matches(job) {
+  const txt = (job.job_title + job.employer_name + job.job_description).toLowerCase();
+  return KEYWORDS.some(k => txt.includes(k));
 }
 
-// ------------------- Main job checker -------------------
+// ------------------- Main Checking Function -------------------
 async function checkJobs() {
-  console.log("🔍 Checking jobs at", new Date().toISOString());
+  console.log("🔍 Checking jobs...");
 
   const jobs = await fetchJobs();
-  console.log(`ℹ️ Found ${jobs.length} jobs from API`);
-
-  let sent = 0;
 
   for (const job of jobs) {
-    if (!job.id || seenJobs.has(job.id)) continue;
+    if (!job.job_id) continue;
 
-    if (!matchesKeywords(job)) continue;
+    if (seen.has(job.job_id)) continue;
 
-    // mark as seen
-    seenJobs.add(job.id);
-    sent++;
+    if (!matches(job)) continue;
 
-    let message = `
-<b>🔥 New Relevant Internship / Job</b>
+    seen.add(job.job_id);
+    saveSeen();
 
-<b>${job.title}</b>
-Company: ${job.company}
-Location: ${job.location}
+    const msg = `
+<b>🔥 New Job Found</b>
 
-🔗 ${job.link}
-`;
+<b>${job.job_title}</b>
+Company: ${job.employer_name}
+Location: ${job.job_country}
 
-    await sendTelegramMessage(message);
-    await new Promise(r => setTimeout(r, 300)); // safety delay
+🔗 ${job.job_apply_link}
+    `;
+
+    await sendTelegram(msg);
   }
-
-  saveSeen();
-  console.log(`✅ Notifications sent: ${sent}`);
-  return sent;
 }
 
-// ------------------- Express server -------------------
+// ------------------- Express Server -------------------
 const app = express();
 
-app.get("/", (req, res) =>
-  res.send("Job Alert Bot is running. Use /status or /trigger")
-);
-
-app.get("/status", (req, res) =>
-  res.json({
-    ok: true,
-    total_seen: seenJobs.size,
-    last_check: new Date().toISOString()
-  })
-);
-
-app.get("/trigger", async (req, res) => {
-  const count = await checkJobs();
-  res.json({ ok: true, sent: count });
+app.get("/", (req, res) => {
+  res.send("Simple Job Bot Running. Use /trigger or /status");
 });
 
-// ------------------- Start -------------------
+app.get("/trigger", async (req, res) => {
+  await checkJobs();
+  res.send("Manual check complete.");
+});
+
+app.get("/status", (req, res) => {
+  res.json({
+    seen: seen.size,
+    last_check: new Date().toISOString()
+  });
+});
+
+// ------------------- Start Server -------------------
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-  console.log("⏳ Running initial check...");
+  console.log("🚀 Server running on port", PORT);
+
+  // Run once at startup
   checkJobs();
 });
 
-// cron: every 5 minutes
-cron.schedule("*/5 * * * *", () => checkJobs());
+// Cron every 5 minutes
+cron.schedule("*/5 * * * *", checkJobs);
